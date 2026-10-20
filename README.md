@@ -169,7 +169,7 @@ Bunu iki katmanla uyguluyorum, çünkü tek katman yetmiyor:
 
 Yani dürüst özet: Ana ajanın testi değiştirmesinin **yaygın yollarını önlüyorum**, kaçanları ise **sonradan tespit edip işi bitirmesine izin vermiyorum**.
 
-Engellenen her girişim `.claude/state/hook.log` dosyasına yazılıyor. Gerçek bir oturumda denediğimde kayıt şöyleydi:
+Engellenen her girişim proje dışındaki `~/.cache/claude-guard/` klasöründe bir `hook.log` dosyasına yazılıyor. Gerçek bir oturumda denediğimde kayıt şöyleydi:
 
 ```
 DENY agent=main tool=Write path=product-service/src/test/java/HookProbeMain.java
@@ -178,7 +178,7 @@ DENY agent=general-purpose tool=Write path=product-service/src/test/java/HookPro
 
 #### 2. `mark-changed.sh` + `test-gate.sh` — Test kapısı (ajan "bitti" demeden **önce**)
 
-* `mark-changed.sh` (PostToolUse): Her işlemden sonra auth ve product modüllerinin parmak izine bakıp hangisinin değiştiğini not alıyor. Parmak izine baktığı için değişiklik Write ile de yapılsa, Bash ile de yapılsa yakalanıyor. Oturum başındaki referansı `snapshot.sh` (SessionStart) alıyor.
+* `mark-changed.sh` (PostToolUse): Her işlemden sonra auth ve product modüllerinin parmak izine bakıp hangisinin değiştiğini not alıyor. Parmak izine baktığı için değişiklik Write ile de yapılsa, Bash ile de yapılsa yakalanıyor. Referansı `snapshot.sh` alıyor; bu hook **sadece yeni oturum başlarken** çalışıyor. Compact, resume ya da `/clear` sonrasında çalışmıyor; aksi hâlde gevşetilmiş bir test, compact sonrası yeni referans olup izini kaybettirebilirdi. Açık bir "test izinsiz değişti" işareti varsa yeni oturumda bile silinmiyor.
 * `test-gate.sh` (Stop): Ajan işi bitirmeye çalıştığında devreye giriyor:
   * Testler test-engineer dışında değiştirildiyse → **engelliyor**.
   * Kod değiştiyse değişen modülün testlerini **kendisi çalıştırıyor**. Yeşilse ajan bitirebilir; kırmızıysa **engelliyor** ve hatayı ajana geri veriyor.
@@ -188,7 +188,20 @@ DENY agent=general-purpose tool=Write path=product-service/src/test/java/HookPro
 
 **Neden ekledim?** Eskiden "testler geçti" diyen ajanın kendisiydi. Şimdi bunu bir script kontrol ediyor.
 
-#### 3. `contract-reminder.sh` — Kontrat hatırlatıcısı (dosya yazıldıktan **sonra**)
+#### 3. Bekçiyi kim korur?
+
+Hook'ların koruduğu ajan, hook'ların kendisini değiştirebilseydi bütün düzen anlamsız olurdu. Bu yüzden:
+
+* `.claude/` altındaki hook, ajan ve ayar dosyalarına Write/Edit ile de, Bash ile de yazılamıyor (`settings.json`'da `Edit(./.claude/**)` deny kuralı + `agent-scope.sh`). Bu dosyaları ben elle değiştiriyorum.
+* Referans hash'leri ve işaretler proje **dışında** (`~/.cache/claude-guard/`) tutuluyor; oraya da yazmak engelli.
+* Yine de bir script üzerinden `.claude/` değiştirilirse, `test-gate.sh` oturum başındaki bekçi parmak iziyle karşılaştırıp işin bitmesine izin vermiyor.
+* Hash aracı (`sha256sum`/`shasum`) bulunamazsa koruma sessizce kapanmıyor; test kapısı bunu hata olarak bildiriyor.
+
+#### 4. Hook'ların kendi testleri
+
+`.claude/hooks/tests/hooktest.py` hook'ları sahte bir proje kopyasında 49 senaryoyla deniyor: test dosyasını `sed -i` ile gevşetmek, script ile değiştirmek, `rm -fr`, `git -C . push`, `cat .env`, hook dosyasını değiştirmek, compact sonrası referansın sıfırlanması, hash aracının olmaması… Bu test CI'da her push'ta çalışıyor. Yani bekçinin kendisi de test ediliyor.
+
+#### 5. `contract-reminder.sh` — Kontrat hatırlatıcısı (dosya yazıldıktan **sonra**)
 
 Ajan auth-service'in controller'ını, DTO'sunu ya da product-service'in `AuthClient`'ını değiştirince ajana *"CONTRACTS.md'yi de güncelle"* diye hatırlatıyor.
 
@@ -216,6 +229,7 @@ Bu bölüm benim için en değerlisi, çünkü her biri gerçekten yaşadığım
 5. **Süreç riske göre ölçeklenmeli.** Yazım hatası için beş ajan çalıştırmak israf.
 6. **Son söz her zaman insanda ve CI'da.** Ajanlar hataları erken yakalıyor ama onların yerine geçmiyor.
 7. **Koruma kurduğunu iddia etmeden önce onu kırmaya çalış.** Bir incelemede kurduğum düzende dört açık çıktı: Ana ajan testleri Bash ile (`sed -i`) değiştirebiliyordu ve bu değişiklik test kapısını tetiklemiyordu; `rm -rf` yasağı `rm -fr` yazınca aşılıyordu; `.env` okuma yasağı `cat .env`'i durdurmuyordu; README'de "her push'ta" dediğim CI sadece `main`'de çalışıyordu. Hepsini düzelttim ve bu sefer iddiaları da koda göre yazdım: "engeller" yerine gerektiği yerde "yaygın yollarını engeller, kaçanları tespit eder" diyorum.
+8. **Bekçiyi de korumak gerekiyor.** İkinci incelemede dört açık daha çıktı: Compact sonrası referans sıfırlanıp gevşetilmiş test "aklanabiliyordu"; ajan hook dosyalarını ve referans hash'lerini değiştirebiliyordu; hash aracı yoksa koruma sessizce kapanıyordu; `.env.example` ve `git log --grep push` gibi zararsız komutlar yanlışlıkla engelleniyordu. Çözümler: referans sadece yeni oturumda alınıyor, `.claude/` ve durum klasörü yazmaya kapalı, hash aracı yoksa test kapısı hata veriyor, git komutu alt komutuna göre ayrıştırılıyor. Ve hook'ların kendisine 49 senaryoluk bir test seti yazıp CI'a ekledim.
 
 ---
 
@@ -230,9 +244,9 @@ Bu bölüm benim için en değerlisi, çünkü her biri gerçekten yaşadığım
 | **Dependency Injection** | `builder.Services.Add...<T>()` | `@Service`, `@Repository`, `@Component`, `@Bean` | Spring varsayılan olarak **singleton** oluşturuyor (.NET'teki `AddSingleton` gibi, `AddScoped` değil). |
 | **Constructor injection** | `public MyService(IRepo repo)` | `public MyService(MyRepo repo)` | Tek constructor varsa `@Autowired` gerekmiyor. |
 | **Servisler arası HTTP** | `IHttpClientFactory` / typed `HttpClient` | `RestClient` (`AuthClient.java`) | |
-| **ORM** | EF Core (`DbContext`, `DbSet<T>`) | Spring Data JPA (`JpaRepository<T, ID>`) | Interface'i yazınca CRUD metotları otomatik geliyor. |
+| **ORM** | EF Core (`DbContext`, `DbSet<T>`) | JPA / Hibernate (`EntityManager`) + Spring Data JPA (`JpaRepository<T, ID>`) | EF Core'un asıl karşılığı JPA (Hibernate); Spring Data JPA bunun üstündeki repository katmanı. Interface'i yazınca CRUD metotları otomatik geliyor. |
 | **Transaction** | `BeginTransaction()` | `@Transactional` | Varsayılan olarak sadece **RuntimeException** hatalarında rollback yapıyor. |
-| **DTO** | `public record X(...)` | `public record X(...)` | Neredeyse aynı söz dizimi. |
+| **DTO** | `public record X(...)` | `public record X(...)` | Söz dizimi benzer ama davranış farklı: Java record'u her zaman immutable ve `final`, kalıtım yok, `with` ifadesi yok; alanlar `x()` gibi metotla okunuyor (`X` property'si değil). |
 | **Koleksiyon sorgulama** | LINQ | Stream API (`.stream().filter().map().toList()`) | |
 | **Controller** | `[ApiController]`, `[HttpGet]`, `[FromBody]` | `@RestController`, `@GetMapping`, `@RequestBody` | |
 | **Validasyon** | DataAnnotations / FluentValidation | Jakarta Validation + `@Valid` | `@Valid` yazılmazsa anotasyonlar çalışmıyor! |

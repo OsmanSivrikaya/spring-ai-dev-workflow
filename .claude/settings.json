@@ -17,14 +17,18 @@
       "Bash(rm -r -f:*)",
       "Bash(rm -f -r:*)",
       "Read(./**/.env)",
-      "Read(./**/.env.*)",
+      "Read(./**/.env.local)",
       "Edit(./**/.env)",
-      "Edit(./**/.env.*)"
+      "Edit(./**/.env.local)",
+      "Read(./**/.env.production)",
+      "Edit(./**/.env.production)",
+      "Edit(./.claude/**)"
     ]
   },
   "hooks": {
     "SessionStart": [
       {
+        "matcher": "startup",
         "hooks": [
           {
             "type": "command",

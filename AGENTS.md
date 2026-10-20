@@ -54,10 +54,12 @@ Kodu yazan ajan kendi işini onaylayamaz.
 | `code-reviewer` (`.claude/agents/`) | Bağımsız inceleme, `ONAY` / `RED` | hiçbir yer (salt okunur) |
 
 Otomatik kontroller (ajanın beyanına bağlı değil, `.claude/settings.json`):
-* **`agent-scope.sh`** (PreToolUse): yukarıdaki yazma sınırlarını uygular; Write/Edit'i ve Bash'teki yaygın yazma kalıplarını (test dosyalarına `sed -i`, `>`, `tee`…) engeller. Ayrıca `rm -rf` / `git push` / `.env` varyasyonlarını herkes için engeller.
+* **`agent-scope.sh`** (PreToolUse): yukarıdaki yazma sınırlarını uygular; Write/Edit'i ve Bash'teki yaygın yazma kalıplarını (test dosyalarına `sed -i`, `>`, `tee`…) engeller. Herkes için: `.claude/**` (hook, ajan, ayar) ve durum klasörü yazılamaz; `rm -rf` / `git push` / `git reset --hard` / `.env` varyasyonları engellenir.
 * **`test-guard.sh`** (PostToolUse): test dosyalarının parmak izini izler; `test-engineer` dışında herhangi bir yolla değişirse bildirir ve test kapısını kilitler. Test değişikliğini geri al ya da `test-engineer`'a yaptır.
-* **`mark-changed.sh`** (PostToolUse) + **`snapshot.sh`** (SessionStart): modüllerin parmak iziyle hangi modülün değiştiğini bulur (Bash ile yapılan değişiklikler dahil).
-* **`test-gate.sh`** (Stop): testler izinsiz değiştiyse veya değişen modülün testleri kırmızıysa ajanın bitirmesini engeller. En fazla 3 kez art arda engeller, sonra "iş bitmiş sayılmaz" uyarısıyla bırakır; JDK/Maven yoksa "doğrulanmadı" der. Bu uyarıları yazılımcıya aynen raporla.
+* **`mark-changed.sh`** (PostToolUse) + **`snapshot.sh`** (SessionStart, sadece yeni oturum): modüllerin parmak iziyle hangi modülün değiştiğini bulur (Bash ile yapılan değişiklikler dahil). Compact/resume referansı sıfırlamaz.
+* **`test-gate.sh`** (Stop): hash aracı yoksa, `.claude/` oturum içinde değiştiyse, testler izinsiz değiştiyse veya değişen modülün testleri kırmızıysa ajanın bitirmesini engeller. En fazla 3 kez art arda engeller, sonra "iş bitmiş sayılmaz" uyarısıyla bırakır; JDK/Maven yoksa "doğrulanmadı" der. Bu uyarıları yazılımcıya aynen raporla.
+* Durum dosyaları (referans hash'ler, işaretler, `hook.log`) proje dışında: `~/.cache/claude-guard/`. Hook'ların kendisi `.claude/hooks/tests/hooktest.py` ile test edilir (CI'da da çalışır).
+* Hook veya ayar değişikliği gerekiyorsa yapma; yazılımcıya öner. `.claude/` dosyalarını yazılımcı elle değiştirir.
 * **`contract-reminder.sh`** (PostToolUse): kontratı etkileyen dosyada `CONTRACTS.md`'yi hatırlatır.
 * **CI** (`.github/workflows/ci.yml`) her branch'teki her push'ta ve her PR'da `mvn -B verify`; **`claude-review.yml`** her PR'da `code-reviewer` kurallarıyla inceleme yapar.
 

@@ -21,7 +21,7 @@ Thumbs.db
 .env
 .env.*
 
-# Claude Code: hook durum dosyaları ve kişisel ayarlar
-# (.claude/ klasörünün geri kalanı bilerek repoda: AI düzenim görünsün diye)
-.claude/state/
+# Claude Code: kişisel ayarlar
+# (.claude/ klasörünün geri kalanı bilerek repoda: AI düzenim görünsün diye.
+#  Hook durum dosyaları proje dışında tutulur: ~/.cache/claude-guard/)
 .claude/settings.local.json

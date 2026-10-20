@@ -9,6 +9,7 @@
 
 source "$(dirname "$0")/fingerprint.sh"
 input=$(cat)
+hash_ok || exit 0   # test-gate.sh hash aracı yokluğunu engelleyerek bildirir
 agent=$(jq -r '.agent_type // empty' <<<"$input")
 tool=$(jq -r '.tool_name' <<<"$input")
 base="$state/test-baseline"

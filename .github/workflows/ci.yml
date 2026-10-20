@@ -17,6 +17,10 @@ jobs:
           java-version: '21'
           cache: maven
 
+      # AI ajanını sınırlayan hook'ların kendisi de test edilir (sahte bir proje kopyasında).
+      - name: Hook testleri
+        run: python3 .claude/hooks/tests/hooktest.py
+
       # Yerelde aynısı: mvn -B verify (ci-build skill'i)
       - name: Build ve testler
         run: mvn -B verify
