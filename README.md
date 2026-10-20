@@ -113,7 +113,7 @@ flowchart TB
 | `.claude/skills/` | Talimat paketleri: `add-permission`, `boilerplate-generator`, `db-changes`, `ci-build`, `junit-test-generator`, `architecture-guard` |
 | `.claude/settings.json` | İzinler ve hook tanımları |
 | `.claude/hooks/` | Hook script'leri (aşağıda tek tek anlattım) |
-| `.github/workflows/ci.yml` | Her push/PR'da `mvn -B verify` |
+| `.github/workflows/ci.yml` | Her branch'teki her push'ta ve her PR'da `mvn -B verify` |
 | `.github/workflows/claude-review.yml` | Her PR'da `code-reviewer` kurallarıyla AI incelemesi |
 
 ### Bir özellik nasıl geliştiriliyor?
@@ -150,9 +150,9 @@ Yani `AGENTS.md`'ye "testlere dokunma" yazmak bir rica. Hook ise o kuralı **zor
 
 ### Bu projedeki hook'lar
 
-#### 1. `agent-scope.sh` — Kim nereye yazabilir? (PreToolUse: dosya yazılmadan **önce**)
+#### 1. `agent-scope.sh` + `test-guard.sh` — Testlere kim dokunabilir?
 
-Her ajanın yazabileceği yeri sınırlıyor:
+Hedefim şu sınırlar:
 
 | Kim | Yazabildiği yer |
 | :--- | :--- |
@@ -160,7 +160,14 @@ Her ajanın yazabileceği yeri sınırlıyor:
 | `test-engineer` | **Sadece** `src/test/**` |
 | `code-reviewer` | **Hiçbir yer** (salt okunur) |
 
-**Neden ekledim?** Kodu yazan ajan testlere de dokunabilseydi, test kırmızı olduğunda kodu düzeltmek yerine testi gevşetip "testler geçti" diyebilirdi. Şimdi bunu yapamıyor; kodu düzeltmek zorunda. Bu, ekiplerdeki **"dört göz" prensibi**: kodu yazan, kendi kodunu onaylamaz.
+**Neden?** Kodu yazan ajan testlere de dokunabilseydi, test kırmızı olduğunda kodu düzeltmek yerine testi gevşetip "testler geçti" diyebilirdi. Bu, ekiplerdeki **"dört göz" prensibi**: kodu yazan, kendi kodunu onaylamaz.
+
+Bunu iki katmanla uyguluyorum, çünkü tek katman yetmiyor:
+
+* **Önleme — `agent-scope.sh` (PreToolUse, işlemden önce):** Write/Edit ile test dosyasına yazmayı engelliyor. Bash komutlarını da metin olarak inceliyor: `sed -i`, `>`, `tee`, `cp` gibi yazma kalıpları test dosyalarıyla birlikte geçiyorsa engelliyor.
+* **Tespit — `test-guard.sh` (PostToolUse, her işlemden sonra):** Bash komutunu metin olarak incelemek her yolu kapatamaz; örneğin ajan testi bir script dosyası üzerinden değiştirebilir. Bu yüzden her işlemden sonra test dosyalarının **parmak izini (hash)** alıyorum. `test-engineer` dışında biri testleri herhangi bir yolla değiştirirse bu yakalanıyor, ajana bildiriliyor ve test kapısı bu düzelene kadar işin bitmesine izin vermiyor.
+
+Yani dürüst özet: Ana ajanın testi değiştirmesinin **yaygın yollarını önlüyorum**, kaçanları ise **sonradan tespit edip işi bitirmesine izin vermiyorum**.
 
 Engellenen her girişim `.claude/state/hook.log` dosyasına yazılıyor. Gerçek bir oturumda denediğimde kayıt şöyleydi:
 
@@ -171,14 +178,15 @@ DENY agent=general-purpose tool=Write path=product-service/src/test/java/HookPro
 
 #### 2. `mark-changed.sh` + `test-gate.sh` — Test kapısı (ajan "bitti" demeden **önce**)
 
-* `mark-changed.sh` (PostToolUse): Ajan bir `.java`, `.yml` veya `pom.xml` dosyasını değiştirince hangi modülün (auth/product) değiştiğini not alıyor.
-* `test-gate.sh` (Stop): Ajan işi bitirmeye çalıştığında, değişen modülün testlerini **kendisi çalıştırıyor**.
-  * Testler yeşil → ajan bitirebilir.
-  * Testler kırmızı → ajanın bitirmesine **izin vermiyor**, hatayı ajana geri veriyor.
-  * Sadece doküman değiştiyse → hiç çalışmıyor (boşuna zaman kaybı yok).
-  * Sonsuz döngüye girmesin diye 3 denemeden sonra bırakıyor ama bana "iş bitmiş sayılmaz" uyarısı gösteriyor.
+* `mark-changed.sh` (PostToolUse): Her işlemden sonra auth ve product modüllerinin parmak izine bakıp hangisinin değiştiğini not alıyor. Parmak izine baktığı için değişiklik Write ile de yapılsa, Bash ile de yapılsa yakalanıyor. Oturum başındaki referansı `snapshot.sh` (SessionStart) alıyor.
+* `test-gate.sh` (Stop): Ajan işi bitirmeye çalıştığında devreye giriyor:
+  * Testler test-engineer dışında değiştirildiyse → **engelliyor**.
+  * Kod değiştiyse değişen modülün testlerini **kendisi çalıştırıyor**. Yeşilse ajan bitirebilir; kırmızıysa **engelliyor** ve hatayı ajana geri veriyor.
+  * Sadece doküman değiştiyse → test çalıştırmıyor.
 
-**Neden ekledim?** Eskiden "testler geçti" diyen yine ajanın kendisiydi. Şimdi bunu ajanın sözü değil, script söylüyor.
+**Bilinçli sınırları:** Sonsuz döngüye girmesin diye **en fazla 3 kez art arda engelliyor**, sonra ajanın durmasına izin veriyor ama bana "iş bitmiş sayılmaz" uyarısı gösteriyor. Makinede JDK/Maven yoksa testleri çalıştıramıyor; engellemiyor, "doğrulanmadı" uyarısı gösteriyor. Yani test kapısı ajanı sonsuza kadar kilitlemiyor, ama "bitti" demesinin bedava olmasını engelliyor ve sonucu bana açıkça söylüyor.
+
+**Neden ekledim?** Eskiden "testler geçti" diyen ajanın kendisiydi. Şimdi bunu bir script kontrol ediyor.
 
 #### 3. `contract-reminder.sh` — Kontrat hatırlatıcısı (dosya yazıldıktan **sonra**)
 
@@ -191,7 +199,9 @@ Ajan auth-service'in controller'ını, DTO'sunu ya da product-service'in `AuthCl
 `.claude/settings.json` içindeki izin kuralları ajanın hangi komutları çalıştırabileceğini belirliyor:
 
 * ✅ Sormadan çalıştırabilir: test komutları, `git status`, `git diff`
-* ⛔ Asla çalıştıramaz: `git push`, `git reset --hard`, `rm -rf`, `.env` dosyalarını okumak
+* ⛔ Engellenen: `git push`, `git reset --hard`, `rm -rf`, `.env` dosyalarını okumak
+
+Burada da dikkatli olmak gerekiyor: İzin kuralları komutun **başını** eşleştiriyor. `Bash(rm -rf:*)` kuralı `rm -fr` veya `rm -r -f` yazılınca işe yaramıyor; `Read(./**/.env)` kuralı da `cat .env` komutunu durdurmuyor. Bu yüzden `agent-scope.sh` bu komutların **yaygın varyasyonlarını** (`rm -fr`, `rm -r -f`, `rm --recursive --force`, `git -C . push`, `cat .env` …) ayrıca yakalıyor. Bu yine de bir metin kontrolü; kesin bir güvenlik sınırı değil, yaygın hataları önleyen bir emniyet kemeri.
 
 ---
 
@@ -205,6 +215,7 @@ Bu bölüm benim için en değerlisi, çünkü her biri gerçekten yaşadığım
 4. **Ajanın "bitti" demesi yetmez.** Doğrulama ajanın beyanında değil; testte, hook'ta ve CI'da olmalı.
 5. **Süreç riske göre ölçeklenmeli.** Yazım hatası için beş ajan çalıştırmak israf.
 6. **Son söz her zaman insanda ve CI'da.** Ajanlar hataları erken yakalıyor ama onların yerine geçmiyor.
+7. **Koruma kurduğunu iddia etmeden önce onu kırmaya çalış.** Bir incelemede kurduğum düzende dört açık çıktı: Ana ajan testleri Bash ile (`sed -i`) değiştirebiliyordu ve bu değişiklik test kapısını tetiklemiyordu; `rm -rf` yasağı `rm -fr` yazınca aşılıyordu; `.env` okuma yasağı `cat .env`'i durdurmuyordu; README'de "her push'ta" dediğim CI sadece `main`'de çalışıyordu. Hepsini düzelttim ve bu sefer iddiaları da koda göre yazdım: "engeller" yerine gerektiği yerde "yaygın yollarını engeller, kaçanları tespit eder" diyorum.
 
 ---
 

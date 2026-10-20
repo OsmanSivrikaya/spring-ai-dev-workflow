@@ -1,8 +1,8 @@
 name: CI
 
+# Her branch'e yapılan her push'ta ve her PR'da çalışır.
 on:
   push:
-    branches: [main]
   pull_request:
 
 jobs:
@@ -17,6 +17,6 @@ jobs:
           java-version: '21'
           cache: maven
 
-      # Yerelde aynısı: mvn -B verify (ci-engineer ajanı da bunu çalıştırır)
+      # Yerelde aynısı: mvn -B verify (ci-build skill'i)
       - name: Build ve testler
         run: mvn -B verify

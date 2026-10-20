@@ -54,10 +54,12 @@ Kodu yazan ajan kendi işini onaylayamaz.
 | `code-reviewer` (`.claude/agents/`) | Bağımsız inceleme, `ONAY` / `RED` | hiçbir yer (salt okunur) |
 
 Otomatik kontroller (ajanın beyanına bağlı değil, `.claude/settings.json`):
-* **`agent-scope.sh`** (PreToolUse): yukarıdaki yazma sınırlarını zorunlu kılar.
-* **`test-gate.sh`** (Stop): kod değiştiyse, ajan durmadan önce değişen modüllerin testlerini çalıştırır. Kırmızıysa ajanın bitirmesine izin vermez.
+* **`agent-scope.sh`** (PreToolUse): yukarıdaki yazma sınırlarını uygular; Write/Edit'i ve Bash'teki yaygın yazma kalıplarını (test dosyalarına `sed -i`, `>`, `tee`…) engeller. Ayrıca `rm -rf` / `git push` / `.env` varyasyonlarını herkes için engeller.
+* **`test-guard.sh`** (PostToolUse): test dosyalarının parmak izini izler; `test-engineer` dışında herhangi bir yolla değişirse bildirir ve test kapısını kilitler. Test değişikliğini geri al ya da `test-engineer`'a yaptır.
+* **`mark-changed.sh`** (PostToolUse) + **`snapshot.sh`** (SessionStart): modüllerin parmak iziyle hangi modülün değiştiğini bulur (Bash ile yapılan değişiklikler dahil).
+* **`test-gate.sh`** (Stop): testler izinsiz değiştiyse veya değişen modülün testleri kırmızıysa ajanın bitirmesini engeller. En fazla 3 kez art arda engeller, sonra "iş bitmiş sayılmaz" uyarısıyla bırakır; JDK/Maven yoksa "doğrulanmadı" der. Bu uyarıları yazılımcıya aynen raporla.
 * **`contract-reminder.sh`** (PostToolUse): kontratı etkileyen dosyada `CONTRACTS.md`'yi hatırlatır.
-* **CI** (`.github/workflows/ci.yml`) her push/PR'da `mvn -B verify`; **`claude-review.yml`** her PR'da `code-reviewer` kurallarıyla inceleme yapar.
+* **CI** (`.github/workflows/ci.yml`) her branch'teki her push'ta ve her PR'da `mvn -B verify`; **`claude-review.yml`** her PR'da `code-reviewer` kurallarıyla inceleme yapar.
 
 ### Akış değişikliğin riskine göre seçilir
 
