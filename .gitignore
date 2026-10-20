@@ -1,0 +1,27 @@
+# Maven build çıktıları
+target/
+
+# IDE (IntelliJ, VS Code, Eclipse)
+.idea/
+*.iml
+.vscode/
+.classpath
+.project
+.settings/
+
+# İşletim sistemi
+.DS_Store
+Thumbs.db
+
+# Log ve geçici dosyalar
+*.log
+*.tmp
+
+# Gizli bilgiler (API key, şifre) asla GitHub'a gitmemeli
+.env
+.env.*
+
+# Claude Code: hook durum dosyaları ve kişisel ayarlar
+# (.claude/ klasörünün geri kalanı bilerek repoda: AI düzenim görünsün diye)
+.claude/state/
+.claude/settings.local.json
